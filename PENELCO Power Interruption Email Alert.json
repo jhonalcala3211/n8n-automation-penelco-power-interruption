@@ -1,0 +1,300 @@
+{
+  "name": "PENELCO Power Interruption Email Alert",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyHour",
+              "minute": 5
+            }
+          ]
+        },
+        "feedUrl": "https://www.penelco.com/feed/"
+      },
+      "id": "1ca77f2f-6c1b-490b-828e-b7af8bcc4ea7",
+      "name": "Watch PENELCO Advisories",
+      "type": "n8n-nodes-base.rssFeedReadTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.title }}",
+              "rightValue": "municipality of abucay",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              },
+              "id": "b1d48574-c6f0-4626-97ed-1dd47bd5f7b8"
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {
+          "ignoreCase": true
+        }
+      },
+      "id": "d20505f5-659c-471a-b77a-8942cef9759a",
+      "name": "Only Power Interruptions",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.3,
+      "position": [
+        224,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://www.penelco.com/wp-json/wp/v2/posts",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "slug",
+              "value": "={{ $json.link.split('/').filter(Boolean).pop() }}"
+            },
+            {
+              "name": "_fields",
+              "value": "id,link,content"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b41e4273-1bb2-4864-a956-4e7c12ef297d",
+      "name": "Get Advisory Post",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        448,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "img",
+              "name": "imageUrl",
+              "type": "string",
+              "value": "={{ (($json.content && $json.content.rendered) || \"\").match(/<img[^>]+src=\"([^\"]+)\"/)?.[1] ?? \"\" }}"
+            },
+            {
+              "id": "title",
+              "name": "title",
+              "type": "string",
+              "value": "={{ $('Only Power Interruptions').item.json.title }}"
+            },
+            {
+              "id": "link",
+              "name": "link",
+              "type": "string",
+              "value": "={{ $('Only Power Interruptions').item.json.link }}"
+            },
+            {
+              "id": "pub",
+              "name": "pubDate",
+              "type": "string",
+              "value": "={{ $('Only Power Interruptions').item.json.pubDate }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "84e3628c-c492-49f7-ac1d-9660f7835009",
+      "name": "Get Image URL",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        672,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.imageUrl }}",
+              "rightValue": "^https?://",
+              "operator": {
+                "type": "string",
+                "operation": "regex"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "67c6a4b7-4e1a-4082-9721-b03d06f89f3f",
+      "name": "Has Image URL",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.3,
+      "position": [
+        896,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "image",
+        "operation": "analyze",
+        "modelId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-5-mini",
+          "cachedResultName": "GPT-5-MINI"
+        },
+        "text": "This image is a power interruption advisory from PENELCO (Bataan, Philippines). Transcribe the key details in plain text using these labels on separate lines: Status (scheduled or cancelled), Date, Time, Affected areas (list every barangay/sitio/street mentioned), Reason/activity. Only report what is written in the image.",
+        "imageUrls": "={{ $json.imageUrl }}",
+        "options": {
+          "detail": "high",
+          "maxTokens": 1500
+        }
+      },
+      "id": "ace77ebf-70e2-484f-9f4b-93e0182f7dd6",
+      "name": "Read Advisory Image",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.3,
+      "position": [
+        896,
+        0
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": null,
+          "name": "Gateway credits",
+          "__aiGatewayManaged": true
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "jkalcala0907@gmail.com",
+        "subject": "=PENELCO Alert: {{ $('Get Image URL').item.json.title }}",
+        "message": "=<p><strong>{{ $(\"Get Image URL\").item.json.title }}</strong></p><p>Posted: {{ $(\"Get Image URL\").item.json.pubDate }}</p><h3>Details from the advisory image</h3><p style=\"white-space:pre-line\">{{ (typeof $json.content === \"string\" && $json.content) || Object.values($json).flat().flatMap(o => (o && Array.isArray(o.content)) ? o.content : []).filter(c => c && c.type === \"output_text\").map(c => c.text).join(\"\\n\") || $json.text || $json.output_text || \"(Could not read the image - see the attached image below)\" }}</p><p><img src=\"{{ $(\"Get Image URL\").item.json.imageUrl }}\" width=\"600\"></p><p>Full post: <a href=\"{{ $(\"Get Image URL\").item.json.link }}\">{{ $(\"Get Image URL\").item.json.link }}</a></p>",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "52328dcd-ce63-4e3f-9674-1a23053cb322",
+      "name": "Email Me the Advisory",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        448,
+        0
+      ],
+      "webhookId": "3d52e07a-dc21-4867-88a3-1c9d5475e157",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "JKUUPfNuE3qETUhS",
+          "name": "Gmail account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Watch PENELCO Advisories": {
+      "main": [
+        [
+          {
+            "node": "Only Power Interruptions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Only Power Interruptions": {
+      "main": [
+        [
+          {
+            "node": "Get Advisory Post",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Advisory Post": {
+      "main": [
+        [
+          {
+            "node": "Get Image URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Image URL": {
+      "main": [
+        [
+          {
+            "node": "Has Image URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Image URL": {
+      "main": [
+        [
+          {
+            "node": "Read Advisory Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Advisory Image": {
+      "main": [
+        [
+          {
+            "node": "Email Me the Advisory",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "2a103fc3-fd9e-4948-b07b-3a7ac7ab4978",
+  "meta": {
+    "instanceId": "619e6f7a35277d94bd26ef5f0362897bab042b3f2001ea98357d1f95fee72f77"
+  },
+  "nodeGroups": [],
+  "id": "7f0R54iuR8C22mxJ",
+  "tags": []
+}
